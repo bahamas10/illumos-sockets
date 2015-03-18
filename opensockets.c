@@ -21,6 +21,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define PROCFS "/proc"
+
 // CLI options
 struct {
 	int debug;
@@ -78,9 +80,11 @@ int main(int argc, char **argv) {
 
 	// header
 	if (opts.header)
-		printf("%-8s %-12s %-17s %-7s %s\n", "PID", "EXEC", "IP", "PORT", "ARGS");
+		printf("%-8s %-12s %-17s %-7s %s\n",
+		    "PID", "EXEC", "IP", "PORT", "ARGS");
 
-	debug("pid = %d\n", getpid());
+	pid_t me = getpid();
+	debug("pid = %d\n", me);
 
 	int i;
 	// loop arguments as pids
@@ -93,17 +97,19 @@ int main(int argc, char **argv) {
 	}
 
 	// loop pids in /proc
-	debug("opening /proc\n");
-	DIR *d = opendir("/proc");
+	debug("opening %s\n", PROCFS);
+	DIR *d = opendir(PROCFS);
 	struct dirent *dp;
 	if (!d) {
-		debug("failed to open /proc: %s\n", strerror(errno));
+		debug("failed to open %s: %s\n", PROCFS, strerror(errno));
 		return 1;
 	}
 	while ((dp = readdir(d))) {
 		if (dp->d_name[0] == '.')
 			continue;
 		pid_t pid = atoi(dp->d_name);
+		if (pid == me)
+			continue;
 		dopid(pid);
 	}
 	closedir(d);
@@ -127,7 +133,7 @@ static void dopid(pid_t pid) {
 
 	// loop fds in /proc/<pid>/fd
 	char procdir[1024];
-	snprintf(procdir, sizeof procdir, "/proc/%d/fd", pid);
+	snprintf(procdir, sizeof procdir, "%s/%d/fd", PROCFS, pid);
 
 	DIR *d = opendir(procdir);
 	struct dirent *dp;
@@ -152,7 +158,7 @@ static int show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	// stat(2) the fd
 	char fname[1024];
 	struct stat sb;
-	snprintf(fname, sizeof fname, "/proc/%d/fd/%d", pid, fd);
+	snprintf(fname, sizeof fname, "%s/%d/fd/%d", PROCFS, pid, fd);
 	if (stat(fname, &sb) == -1) {
 		debug("failed to stat %s: %s\n", fname, strerror(errno));
 		return 0;
