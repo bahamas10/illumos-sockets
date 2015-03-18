@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
 	DIR *d = opendir(PROCFS);
 	struct dirent *dp;
 	if (!d) {
-		debug("failed to open %s: %s\n", PROCFS, strerror(errno));
+		fprintf(stderr, "failed to open %s: %s\n", PROCFS, strerror(errno));
 		return 1;
 	}
 	while ((dp = readdir(d))) {
