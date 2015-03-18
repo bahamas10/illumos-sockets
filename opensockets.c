@@ -29,7 +29,7 @@ struct {
 	int header;
 } opts;
 
-static int show_file(struct ps_prochandle *Pr, pid_t pid, int fd);
+static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd);
 static void dopid(pid_t pid);
 
 // function like printf that is turned on with the debug CLI switch
@@ -154,19 +154,19 @@ done:
 }
 
 // process a fd in a pid
-static int show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
+static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	// stat(2) the fd
 	char fname[1024];
 	struct stat sb;
 	snprintf(fname, sizeof fname, "%s/%d/fd/%d", PROCFS, pid, fd);
 	if (stat(fname, &sb) == -1) {
 		debug("failed to stat %s: %s\n", fname, strerror(errno));
-		return 0;
+		return;
 	}
 
 	// only look for sockets
 	if ((sb.st_mode & S_IFMT) != S_IFSOCK)
-		return 0;
+		return;
 
 	// A buffer large enough for PATH_MAX size AF_UNIX address
 	// this taken from pfiles.c
@@ -179,23 +179,23 @@ static int show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	int type;
 	int tlen = sizeof (type);
 	if (pr_getsockopt(Pr, fd, SOL_SOCKET, SO_TYPE, &type, &tlen) != 0)
-		return 0;
+		return;
 
 	// only look for TCP (STREAM) sockets
 	if (type != SOCK_STREAM)
-		return 0;
+		return;
 
 	// skip if we have a peer
 	if (pr_getpeername(Pr, fd, sa, &len) == 0)
-		return 0;
+		return;
 
 	// call getsockname on the fd inside the process
 	if (pr_getsockname(Pr, fd, sa, &len) != 0)
-		return 0;
+		return;
 
 	// only care about ipv4 for now
 	if (sa->sa_family != AF_INET)
-		return 0;
+		return;
 
 	// we have a socket we actually care about!
 	struct sockaddr_in *sa_in = (struct sockaddr_in *)(void *)sa;
@@ -205,7 +205,7 @@ static int show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	// sometimes the port can be 0... idk why but this helps reduce dups
 	if (!port) {
 		debug("pid %d fd %d port is %d\n", pid, fd, port);
-		return 0;
+		return;
 	}
 
 	// get the process info
@@ -214,6 +214,4 @@ static int show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	// print what we found
 	printf("%-8d %-12s %-17s %-7d %s\n",
 	    pid, pinfo->pr_fname, ip, port, pinfo->pr_psargs);
-
-	return 0;
 }
