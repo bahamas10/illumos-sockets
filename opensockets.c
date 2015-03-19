@@ -13,7 +13,6 @@
 #include <libproc.h>
 #include <limits.h>
 #include <netinet/in.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,26 +22,18 @@
 
 #define PROCFS "/proc"
 
+#define DEBUG(...) do { if (opts.level >= 1) printf(__VA_ARGS__); } while (0)
+#define TRACE(...) do { if (opts.level >= 2) printf(__VA_ARGS__); } while (0)
+
 // CLI options
 struct {
-	int debug;
-	int header;
+	int level;  // log level, defaults to 0
+	int header; // print header, defaults to true (1)
 } opts;
 
 static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd);
-static void dopid(pid_t pid);
-
-// function like printf that is turned on with the debug CLI switch
-void debug(const char *fmt, ...) {
-	if (!opts.debug)
-		return;
-
-	// printf like normal
-	va_list args;
-	va_start(args, fmt);
-	vprintf(fmt, args);
-	va_end(args);
-}
+static void process_pid(pid_t pid);
+static int is_socket(pid_t pid, int fd);
 
 // print the usage message
 void usage(FILE *stream) {
@@ -51,26 +42,26 @@ void usage(FILE *stream) {
 	fprintf(stream, "print all ports in use on the current system\n");
 	fprintf(stream, "\n");
 	fprintf(stream, "options\n");
-	fprintf(stream, "  -d       turn on debug output\n");
 	fprintf(stream, "  -h       print this message and exit\n");
 	fprintf(stream, "  -H       don't print header\n");
+	fprintf(stream, "  -v       increase verbosity\n");
 }
 
 int main(int argc, char **argv) {
 	opts.header = 1;
-	opts.debug = 0;
+	opts.level = 0;
 
 	int c;
-	while ((c = getopt(argc, argv, "dhH")) != -1) {
+	while ((c = getopt(argc, argv, "hHv")) != -1) {
 		switch (c) {
-			case 'd':
-				opts.debug = 1;
-				break;
 			case 'h':
 				usage(stdout);
 				return 0;
 			case 'H':
 				opts.header = 0;
+				break;
+			case 'v':
+				opts.level++;
 				break;
 			case '?':
 				usage(stderr);
@@ -84,20 +75,21 @@ int main(int argc, char **argv) {
 		    "PID", "EXEC", "IP", "PORT", "ARGS");
 
 	pid_t me = getpid();
-	debug("pid = %d\n", me);
+	DEBUG("pid = %d\n", me);
 
+	// check for arguments (pids)
 	int i;
-	// loop arguments as pids
 	if (optind < argc) {
+		// loop arguments as pids
 		for (i = optind; i < argc; i++) {
 			pid_t pid = atoi(argv[i]);
-			dopid(pid);
+			process_pid(pid);
 		}
 		return 0;
 	}
 
-	// loop pids in /proc
-	debug("opening %s\n", PROCFS);
+	// no extra arguments, loop all pids in /proc
+	TRACE("opening %s\n", PROCFS);
 	DIR *d = opendir(PROCFS);
 	struct dirent *dp;
 	if (!d) {
@@ -108,9 +100,12 @@ int main(int argc, char **argv) {
 		if (dp->d_name[0] == '.')
 			continue;
 		pid_t pid = atoi(dp->d_name);
+
+		// skip ourself
 		if (pid == me)
 			continue;
-		dopid(pid);
+
+		process_pid(pid);
 	}
 	closedir(d);
 
@@ -118,55 +113,83 @@ int main(int argc, char **argv) {
 }
 
 // process a pid
-static void dopid(pid_t pid) {
-	debug("processing pid %d\n", pid);
+static void process_pid(pid_t pid) {
+	struct ps_prochandle *Pr = NULL;
+	DEBUG("processing pid %d\n", pid);
 
-	int perr = 0;
-	// grab the process
-	struct ps_prochandle *Pr = Pgrab(pid, PGRAB_NOSTOP, &perr);
-	if (perr || !Pr) {
-		debug("ps_prochandle for %d: %s\n", pid, Pgrab_error(perr));
-		if (perr == G_PERM)
-			fprintf(stderr, "pid %d: %s\n", pid, Pgrab_error(perr));
-		return;
-	}
+	// 1. loop the fds in /proc/<pid>/fd
+	// This is done first to check to see if the process has any open
+	// sockets.  This way, we can lazily Pgrab the process when the first
+	// socket is discovered, and skip this step if the process contains no
+	// sockets
 
 	// loop fds in /proc/<pid>/fd
 	char procdir[1024];
 	snprintf(procdir, sizeof procdir, "%s/%d/fd", PROCFS, pid);
-
+	TRACE("opendir(%s)\n", procdir);
 	DIR *d = opendir(procdir);
 	struct dirent *dp;
 	if (!d) {
-		debug("failed to open %s: %s\n", procdir, strerror(errno));
-		goto done;
+		fprintf(stderr, "failed to open %s: %s\n",
+		    procdir, strerror(errno));
+		return;
 	}
 	while ((dp = readdir(d))) {
 		if (dp->d_name[0] == '.')
 			continue;
+
 		int fd = atoi(dp->d_name);
+		TRACE("processing fd %d\n", fd);
+
+		// skip if the file is not a socket
+		if (!is_socket(pid, fd))
+			continue;
+
+		TRACE("%d is a socket\n", fd);
+
+		// if we make it here, the file is a socket, so lazily Pgrab
+		// the process and inspect the socket
+		if (!Pr) {
+			int perr = 0;
+			TRACE("Pgrab(%d)\n", pid);
+			Pr = Pgrab(pid, PGRAB_NOSTOP, &perr);
+			if (perr || !Pr) {
+				DEBUG("ps_prochandle for %d: %s\n", pid,
+				    Pgrab_error(perr));
+				// end this loop completely if we fail this
+				goto done;
+			}
+		}
+
 		show_file(Pr, pid, fd);
 	}
-	closedir(d);
 
 done:
-	Prelease(Pr, 0);
+	TRACE("closedir(%s)\n", procdir);
+	closedir(d);
+	if (Pr) {
+		TRACE("Prelease(<%d>)\n", pid);
+		Prelease(Pr, 0);
+	}
 }
 
-// process a fd in a pid
-static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
+// given a pid and fd, return 1 if the fd is a socket
+// and 0 if it isn't or an error is encountered
+static int is_socket(pid_t pid, int fd) {
 	// stat(2) the fd
 	char fname[1024];
 	struct stat sb;
 	snprintf(fname, sizeof fname, "%s/%d/fd/%d", PROCFS, pid, fd);
 	if (stat(fname, &sb) == -1) {
-		debug("failed to stat %s: %s\n", fname, strerror(errno));
-		return;
+		DEBUG("failed to stat %s: %s\n", fname, strerror(errno));
+		return 0;
 	}
 
-	// only look for sockets
-	if ((sb.st_mode & S_IFMT) != S_IFSOCK)
-		return;
+	return ((sb.st_mode & S_IFMT) == S_IFSOCK);
+}
+
+// process a fd in a pid
+static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 
 	// A buffer large enough for PATH_MAX size AF_UNIX address
 	// this taken from pfiles.c
@@ -204,7 +227,7 @@ static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 
 	// sometimes the port can be 0... idk why but this helps reduce dups
 	if (!port) {
-		debug("pid %d fd %d port is %d\n", pid, fd, port);
+		DEBUG("pid %d fd %d port is %d\n", pid, fd, port);
 		return;
 	}
 

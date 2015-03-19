@@ -26,9 +26,9 @@ Usage
     print all ports in use on the current system
 
     options
-      -d       turn on debug output
       -h       print this message and exit
       -H       don't print header
+      -v       increase verbosity
 
 Example
 -------
