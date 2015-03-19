@@ -130,8 +130,7 @@ static void process_pid(pid_t pid) {
 	DIR *d = opendir(procdir);
 	struct dirent *dp;
 	if (!d) {
-		fprintf(stderr, "failed to open %s: %s\n",
-		    procdir, strerror(errno));
+		DEBUG("failed to open %s: %s\n", procdir, strerror(errno));
 		return;
 	}
 	while ((dp = readdir(d))) {
