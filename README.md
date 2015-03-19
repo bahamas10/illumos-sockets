@@ -61,14 +61,12 @@ work required to ensure it is a TCP IPv4 socket that is listening on a specific
 port for incoming requests.  Once all that is done a line is printed with
 process information and the IP and port.
 
-Why?
-----
-
-Speed.
+Performance
+-----------
 
 ### `lsof`
 
-Using `lsof` (which uses `pfiles(1)` under the hood) from the `smtools` package
+Using `lsof` (which uses `pfiles(1)` under the hood) from the `smtools` package on:
 
 A platform that does NOT include the https://www.illumos.org/issues/5397 patch
 
