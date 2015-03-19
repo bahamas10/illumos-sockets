@@ -31,7 +31,7 @@ struct {
 	int header; // print header, defaults to true (1)
 } opts;
 
-static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd);
+static void show_socket(struct ps_prochandle *Pr, pid_t pid, int fd);
 static void process_pid(pid_t pid);
 static int is_socket(pid_t pid, int fd);
 
@@ -161,7 +161,7 @@ static void process_pid(pid_t pid) {
 			}
 		}
 
-		show_file(Pr, pid, fd);
+		show_socket(Pr, pid, fd);
 	}
 
 done:
@@ -189,8 +189,7 @@ static int is_socket(pid_t pid, int fd) {
 }
 
 // process a fd in a pid
-static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
-
+static void show_socket(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	// A buffer large enough for PATH_MAX size AF_UNIX address
 	// this taken from pfiles.c
 	long buf[(sizeof (short) + PATH_MAX + sizeof (long) - 1)
@@ -212,11 +211,11 @@ static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	if (pr_getpeername(Pr, fd, sa, &len) == 0)
 		return;
 
-	// call getsockname on the fd inside the process
+	// get the socket information
 	if (pr_getsockname(Pr, fd, sa, &len) != 0)
 		return;
 
-	// only care about ipv4 for now
+	// only care about ipv4 for now (TODO handle ipv6)
 	if (sa->sa_family != AF_INET)
 		return;
 
@@ -225,7 +224,8 @@ static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	char *ip = inet_ntoa(sa_in->sin_addr);
 	int port = ntohs(sa_in->sin_port);
 
-	// sometimes the port can be 0... idk why but this helps reduce dups
+	// sometimes the port can be 0... idk why but this conditional helps
+	// reduce duplicates
 	if (!port) {
 		DEBUG("pid %d fd %d port is %d\n", pid, fd, port);
 		return;
@@ -234,7 +234,7 @@ static void show_file(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	// get the process info
 	const struct psinfo *pinfo = Ppsinfo(Pr);
 
-	// print what we found
+	// print what we've found
 	printf("%-8d %-12s %-17s %-7d %s\n",
 	    pid, pinfo->pr_fname, ip, port, pinfo->pr_psargs);
 }
