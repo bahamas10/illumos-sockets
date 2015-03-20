@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
 		    "PID", "EXEC", "IP", "PORT", "ARGS");
 
 	pid_t me = getpid();
-	DEBUG("pid = %d\n", me);
+	DEBUG("pid: %d\n", me);
 
 	// check for arguments (pids)
 	int i;
@@ -103,8 +103,10 @@ int main(int argc, char **argv) {
 		pid_t pid = atoi(dp->d_name);
 
 		// skip ourself
-		if (pid == me)
+		if (pid == me) {
+			TRACE("skipping pid %d (ourselves)\n", pid);
 			continue;
+		}
 
 		process_pid(pid);
 	}
@@ -131,9 +133,13 @@ static void process_pid(pid_t pid) {
 	DIR *d = opendir(procdir);
 	struct dirent *dp;
 	if (!d) {
-		DEBUG("failed to open %s: %s\n", procdir, strerror(errno));
+		// failed to open fd dir: this can happen for a number of
+		// reasons, but if it is permissions let the user know
 		if (errno == EACCES)
 			fprintf(stderr, "failed to open %s: %s\n", procdir,
+			    strerror(errno));
+		else
+			DEBUG("failed to open %s: %s\n", procdir,
 			    strerror(errno));
 		return;
 	}
@@ -145,8 +151,10 @@ static void process_pid(pid_t pid) {
 		TRACE("processing fd %d\n", fd);
 
 		// skip if the file is not a socket
-		if (!is_socket(pid, fd))
+		if (!is_socket(pid, fd)) {
+			TRACE("%d is not a socket\n", fd);
 			continue;
+		}
 
 		TRACE("%d is a socket\n", fd);
 
