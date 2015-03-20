@@ -222,13 +222,14 @@ static void show_socket(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	if (sa->sa_family != AF_INET)
 		return;
 
-	// we have a socket we actually care about!
+	// extract the ip and port from the socket
 	struct sockaddr_in *sa_in = (struct sockaddr_in *)(void *)sa;
 	char *ip = inet_ntoa(sa_in->sin_addr);
 	int port = ntohs(sa_in->sin_port);
 
-	// sometimes the port can be 0... idk why but this conditional helps
-	// reduce duplicates
+	// sometimes the port can be 0. i'm not sure why this happens,
+	// but eliminating these helps reduce duplicates.  i suspect
+	// this has something to da with shared sockets due to fork(2)
 	if (!port) {
 		DEBUG("pid %d fd %d port is %d\n", pid, fd, port);
 		return;
