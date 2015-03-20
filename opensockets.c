@@ -131,6 +131,9 @@ static void process_pid(pid_t pid) {
 	struct dirent *dp;
 	if (!d) {
 		DEBUG("failed to open %s: %s\n", procdir, strerror(errno));
+		if (errno == EACCES)
+			fprintf(stderr, "failed to open %s: %s\n", procdir,
+			    strerror(errno));
 		return;
 	}
 	while ((dp = readdir(d))) {
