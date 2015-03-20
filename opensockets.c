@@ -26,7 +26,7 @@
 #define TRACE(...) do { if (opts.level >= 2) printf(__VA_ARGS__); } while (0)
 
 // CLI options
-struct {
+static struct {
 	int level;  // log level, defaults to 0
 	int header; // print header, defaults to true (1)
 } opts;
@@ -36,7 +36,7 @@ static void process_pid(pid_t pid);
 static int is_socket(pid_t pid, int fd);
 
 // print the usage message
-void usage(FILE *stream) {
+static void usage(FILE *stream) {
 	fprintf(stream, "usage: opensockets [-h] [-v] [-H] [[pid] ...]\n");
 	fprintf(stream, "\n");
 	fprintf(stream, "print all ports in use on the current system\n");
@@ -93,7 +93,8 @@ int main(int argc, char **argv) {
 	DIR *d = opendir(PROCFS);
 	struct dirent *dp;
 	if (!d) {
-		fprintf(stderr, "failed to open %s: %s\n", PROCFS, strerror(errno));
+		fprintf(stderr, "failed to open %s: %s\n",
+		    PROCFS, strerror(errno));
 		return 1;
 	}
 	while ((dp = readdir(d))) {
@@ -237,8 +238,8 @@ static void show_socket(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	const struct psinfo *pinfo = Ppsinfo(Pr);
 
 	// not likely, but Ppsinfo could technically return NULL.
-	// because we know that a socket is listening, but we don't know process
-	// info, we should print something to the user
+	// because we know that a socket is listening, but we don't know
+	// process info, we should print something to the user
 	const char *name = "<unknown>";
 	const char *args = "<unknown>";
 	if (pinfo) {
