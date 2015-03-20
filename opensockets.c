@@ -124,7 +124,7 @@ static void process_pid(pid_t pid) {
 	// sockets
 
 	// loop fds in /proc/<pid>/fd
-	char procdir[1024];
+	char procdir[PATH_MAX];
 	snprintf(procdir, sizeof procdir, "%s/%d/fd", PROCFS, pid);
 	TRACE("opendir(%s)\n", procdir);
 	DIR *d = opendir(procdir);
@@ -176,7 +176,7 @@ done:
 // and 0 if it isn't or an error is encountered
 static int is_socket(pid_t pid, int fd) {
 	// stat(2) the fd
-	char fname[1024];
+	char fname[PATH_MAX];
 	struct stat sb;
 	snprintf(fname, sizeof fname, "%s/%d/fd/%d", PROCFS, pid, fd);
 	if (stat(fname, &sb) == -1) {
@@ -233,7 +233,17 @@ static void show_socket(struct ps_prochandle *Pr, pid_t pid, int fd) {
 	// get the process info
 	const struct psinfo *pinfo = Ppsinfo(Pr);
 
+	// not likely, but Ppsinfo could technically return NULL.
+	// because we know that a socket is listening, but we don't know process
+	// info, we should print something to the user
+	const char *name = "<unknown>";
+	const char *args = "<unknown>";
+	if (pinfo) {
+		name = pinfo->pr_fname;
+		args = pinfo->pr_psargs;
+	}
+
 	// print what we've found
 	printf("%-8d %-12s %-17s %-7d %s\n",
-	    pid, pinfo->pr_fname, ip, port, pinfo->pr_psargs);
+	    pid, name, ip, port, args);
 }
