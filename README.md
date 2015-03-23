@@ -1,6 +1,9 @@
 opensockets(1)
 ==============
 
+**DEPRECATED:** see https://github.com/bahamas10/illumos-sockstat for a MUCH
+faster solution
+
 A substitute for `pfiles(1)` on [Illumos][0] that does as
 little as possible to list open ports on a machine in the quickest and
 least invasive way possible
